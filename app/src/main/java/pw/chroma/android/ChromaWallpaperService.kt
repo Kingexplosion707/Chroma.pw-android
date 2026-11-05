@@ -245,19 +245,21 @@ class ChromaWallpaperService : WallpaperService() {
         }
 
         private fun drawLyrics(c: Canvas, left: Float, top: Float, right: Float, bottom: Float) {
-            val ly = lyrics?.synced.orEmpty()
+            val lyr = lyrics ?: return
+            val ly = lyr.lines
             if (ly.isEmpty()) return
             val width = (right - left).toInt()
             if (layoutW != width) { layouts.clear(); layoutW = width }
             val align = when (Settings.lyricsAlign) { 1 -> Layout.Alignment.ALIGN_CENTER; 2 -> Layout.Alignment.ALIGN_OPPOSITE; else -> Layout.Alignment.ALIGN_NORMAL }
             val pos = np.livePosition()
-            val idx = ly.indexOfLast { it.timeMs <= pos + 150 }.coerceAtLeast(0)
+            val idx = lyr.indexAt(pos).coerceAtLeast(0)
             val gap = w * 0.035f
 
+            fun textOf(i: Int) = ly[i].words.joinToString("") { it.text }.trimEnd().ifBlank { "\u2022 \u2022 \u2022" }
             fun layoutFor(i: Int): StaticLayout = layouts.getOrPut(i) {
-                val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; typeface = Typeface.DEFAULT_BOLD; textSize = w * 0.072f }
-                StaticLayout.Builder.obtain(ly[i].text.ifBlank { "♪" }, 0, ly[i].text.ifBlank { "♪" }.length, tp, width)
-                    .setAlignment(align).setLineSpacing(0f, 1.05f).build()
+                val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD); textSize = w * 0.072f }
+                val t = textOf(i)
+                StaticLayout.Builder.obtain(t, 0, t.length, tp, width).setAlignment(align).setLineSpacing(0f, 1.05f).build()
             }
             var offset = 0f
             for (i in 0 until idx) offset += layoutFor(i).height + gap
@@ -271,13 +273,49 @@ class ChromaWallpaperService : WallpaperService() {
                 if (yy + l.height >= top) {
                     val d = abs(i - idx)
                     val tp = l.paint
-                    tp.maskFilter = blurFilters[minOf(d, 6)]
-                    tp.alpha = when { d == 0 -> 255; i < idx -> 90; else -> maxOf(70, 190 - d * 30) }
-                    c.save(); c.translate(left, yy); l.draw(c); c.restore()
+                    c.save(); c.translate(left, yy)
+                    if (d == 0) {
+                        // word-by-word: dim base, then the sung part bright and glowing
+                        tp.maskFilter = null; tp.alpha = 95; l.draw(c)
+                        val sung = if (Settings.wordSync) sungChars(ly[i], pos) else l.text.length.toFloat()
+                        tp.alpha = 255; tp.setShadowLayer(w * 0.02f, 0f, 0f, 0xB3FFFFFF.toInt())
+                        for (k in 0 until l.lineCount) {
+                            val s0 = l.getLineStart(k); val e0 = l.getLineEnd(k)
+                            if (sung <= s0) break
+                            val x = if (sung >= e0) l.getLineRight(k) else {
+                                val ci = sung.toInt().coerceIn(s0, e0 - 1)
+                                val x0 = l.getPrimaryHorizontal(ci)
+                                val x1 = if (ci + 1 < e0) l.getPrimaryHorizontal(ci + 1) else l.getLineRight(k)
+                                x0 + (x1 - x0) * (sung - ci)
+                            }
+                            c.save()
+                            c.clipRect(l.getLineLeft(k), l.getLineTop(k).toFloat(), x, l.getLineBottom(k).toFloat())
+                            l.draw(c)
+                            c.restore()
+                        }
+                        tp.clearShadowLayer()
+                    } else {
+                        tp.maskFilter = blurFilters[minOf(d, 6)]
+                        tp.alpha = when { i < idx -> 90; else -> maxOf(70, 190 - d * 30) }
+                        l.draw(c)
+                    }
+                    c.restore()
                 }
                 yy += l.height + gap
             }
             c.restore()
+        }
+
+        /** Characters of [line] sung by [pos], including the partly sung word. */
+        private fun sungChars(line: LyricLine, pos: Long): Float {
+            var n = 0f
+            for (wd in line.words) {
+                val p = wd.progress(pos)
+                if (p <= 0f) break
+                n += wd.text.length * p
+                if (p < 1f) break
+            }
+            return n
         }
     }
 }

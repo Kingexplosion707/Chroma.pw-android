@@ -10,6 +10,7 @@
         <package android:name="com.spotify.music" />
     </queries>
     <application
+        android:name=".ChromaApp"
         android:allowBackup="true"
         android:icon="@mipmap/icon_chroma"
         android:label="Chroma"
