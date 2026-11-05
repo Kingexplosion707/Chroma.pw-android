@@ -1,0 +1,35 @@
+name: Build Chroma (Metrolist)
+on:
+  push:
+    branches: [chroma-metrolist]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: gradle/actions/setup-gradle@v4
+      - run: chmod +x gradlew
+      - name: Build release APK
+        run: ./gradlew --console=plain :app:assembleFossRelease -x lint -x lintVitalFossRelease --warning-mode summary
+        env:
+          METROLIST_APPLICATION_ID: pw.chroma.music
+          METROLIST_APP_NAME: Chroma
+      - name: Sign APK
+        run: |
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          mkdir -p out
+          for f in app/build/outputs/apk/foss/release/*.apk; do
+            n=$(basename "$f" .apk | sed 's/-unsigned//')
+            $BT/zipalign -f -p 4 "$f" "out/$n-aligned.apk"
+            $BT/apksigner sign --ks app/persistent-debug.keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --out "out/Chroma-$n.apk" "out/$n-aligned.apk"
+            rm "out/$n-aligned.apk"
+          done
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chroma-metrolist-apk
+          path: out/*.apk
