@@ -39,7 +39,20 @@ if tok:
             print("MXM match", title, h.get("status_code"), "id", t.get("track_id"), "has_richsync", t.get("has_richsync"), "has_subtitles", t.get("has_subtitles"))
             tid = t.get("track_id")
         except Exception as e:
-            print("MXM match fail", s, b[:150]); tid = None
+            print("MXM match fail", s, b[:300].replace(chr(10)," ")); tid = None
+        q = urllib.parse.urlencode({"format":"json","namespace":"lyrics_richsynched","subtitle_format":"mxm","app_id":APP,"q_artist":artist,"q_artists":artist,"q_track":title,"usertoken":tok})
+        s2, b2, _ = get("https://apic-desktop.musixmatch.com/ws/1.1/macro.subtitles.get?" + q, H)
+        try:
+            j = json.loads(b2); mc = j["message"]["body"]["macro_calls"]
+            print("MACRO", title, s2, "calls", sorted(mc.keys()))
+            mt = mc["matcher.track.get"]["message"]
+            print(" matcher hdr", mt["header"].get("status_code"), "track", (mt["body"] or {}).get("track",{}).get("track_id") if isinstance(mt["body"],dict) else None,
+                  "rich", (mt["body"] or {}).get("track",{}).get("has_richsync") if isinstance(mt["body"],dict) else None)
+            tid = (mt["body"] or {}).get("track",{}).get("track_id") if isinstance(mt["body"],dict) else None
+            st = mc.get("track.subtitles.get",{}).get("message",{})
+            print(" subtitles hdr", st.get("header",{}).get("status_code"))
+        except Exception as e:
+            print("MACRO fail", s2, str(e)[:60], b2[:300].replace(chr(10)," "))
         if tid:
             q = urllib.parse.urlencode({"track_id": tid, "usertoken": tok, "app_id": APP, "format": "json"})
             s, b, _ = get("https://apic-desktop.musixmatch.com/ws/1.1/track.richsync.get?" + q, H)
