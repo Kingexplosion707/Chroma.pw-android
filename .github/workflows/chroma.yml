@@ -14,7 +14,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
       - name: Build release APK
-        run: ./gradlew --console=plain :app:assembleFossRelease -x lint -x lintVitalFossRelease --warning-mode summary
+        run: ./gradlew --console=plain :app:assembleFossRelease -x lint -x lintFossRelease --warning-mode summary
         env:
           METROLIST_APPLICATION_ID: pw.chroma.music
           METROLIST_APP_NAME: Chroma
