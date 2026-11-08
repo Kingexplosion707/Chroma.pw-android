@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -86,6 +87,7 @@ import com.metrolist.music.constants.LyricsProviderOrderKey
 import com.metrolist.music.constants.PureBlackKey
 import com.metrolist.music.constants.SelectedThemeColorKey
 import com.metrolist.music.constants.SleepTimerFadeOutKey
+import com.metrolist.music.constants.TranslateLanguageKey
 import com.metrolist.music.lyrics.LyricsProviderRegistry
 import com.metrolist.music.ui.component.Material3SettingsGroup
 import com.metrolist.music.ui.component.Material3SettingsItem
@@ -461,15 +463,49 @@ private fun LyricsPage(nav: NavController) {
         ),
     )
     Spacer(Modifier.height(16.dp))
+    val (_, setMetrolistLang) = rememberPreference(TranslateLanguageKey, "en")
+    var pickLang by remember { mutableStateOf(false) }
+    val langName = translationLanguages.firstOrNull { it.first == ChromaPrefs.translationLanguage.value }?.second ?: "Off"
     Material3SettingsGroup(
         title = "Lyrics look and translation",
         items = listOf(
+            navItem(R.drawable.translate, "Lyrics translation", "$langName · Musixmatch's community translations, under each line") { pickLang = true },
+            navItem(R.drawable.language, "Translate with AI", "Any song, with a key of your own (Gemini, OpenRouter or DeepL)") { nav.navigate("settings/ai") },
             navItem(R.drawable.lyrics, "Lyrics look", "Text size, glow, blur, animation, position") { nav.navigate("settings/player") },
             navItem(R.drawable.translate, "Pronunciation", "Romanization of Japanese, Korean, Chinese and more") { nav.navigate("settings/content/romanization") },
-            navItem(R.drawable.language, "Lyrics translation", "Translate lyrics with your own AI key") { nav.navigate("settings/ai") },
         ),
     )
+    if (pickLang) AlertDialog(
+        onDismissRequest = { pickLang = false },
+        title = { Text("Translate lyrics into") },
+        text = {
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                items(translationLanguages) { (code, name) ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            ChromaPrefs.translationLanguage.value = code
+                            if (code.isNotEmpty()) setMetrolistLang(code)
+                            pickLang = false
+                        }.padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = ChromaPrefs.translationLanguage.value == code, onClick = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(name)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { pickLang = false }) { Text("Close") } },
+    )
 }
+
+private val translationLanguages = listOf(
+    "" to "Off", "en" to "English", "es" to "Spanish", "pt" to "Portuguese", "fr" to "French", "de" to "German",
+    "it" to "Italian", "nl" to "Dutch", "sv" to "Swedish", "pl" to "Polish", "ro" to "Romanian", "el" to "Greek",
+    "tr" to "Turkish", "ru" to "Russian", "uk" to "Ukrainian", "ar" to "Arabic", "fa" to "Persian", "he" to "Hebrew",
+    "hi" to "Hindi", "id" to "Indonesian", "vi" to "Vietnamese", "th" to "Thai", "ja" to "Japanese", "ko" to "Korean", "zh" to "Chinese",
+)
 
 // ---------------- music haptics ----------------
 @Composable
@@ -543,7 +579,7 @@ private fun LivePage() {
         title = "Live Activity",
         items = listOf(
             switchItem(R.drawable.notification, "Live Activity", "The song and its current lyric line as a live update, in the status bar and on the lock screen", ChromaPrefs.liveActivity.value) { ChromaPrefs.liveActivity.value = it },
-            switchItem(R.drawable.translate, "Translation under the line", "Where the lyrics come with one", ChromaPrefs.liveActivityTranslation.value) { ChromaPrefs.liveActivityTranslation.value = it },
+            switchItem(R.drawable.translate, "Translation under the line", "Pick a translation language in Lyrics first", ChromaPrefs.liveActivityTranslation.value) { ChromaPrefs.liveActivityTranslation.value = it },
         ),
     )
     Footer("On Android 16 it shows as a Live Update chip. Needs notification access and notifications allowed.")

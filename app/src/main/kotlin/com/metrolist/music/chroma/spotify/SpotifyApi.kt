@@ -318,7 +318,7 @@ object SpotifyApi {
 
     suspend fun track(id: String): SpTrack? = track(call("GET", "/tracks/$id"))
 
-    suspend fun artistTopTracks(id: String): List<SpTrack> = list(call("GET", "/artists/$id/top-tracks")?.optJSONArray("tracks")) { track(it) }
+    suspend fun artistTopTracks(id: String): List<SpTrack> = list(call("GET", "/artists/$id/top-tracks?market=from_token")?.optJSONArray("tracks")) { track(it) }
 
     suspend fun artistAlbums(id: String): List<SpItem> =
         list(call("GET", "/artists/$id/albums?include_groups=album,single&limit=30")?.optJSONArray("items")) { item("album", it) }

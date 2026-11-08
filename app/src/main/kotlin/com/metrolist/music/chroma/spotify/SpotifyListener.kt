@@ -14,6 +14,9 @@ import com.metrolist.music.R
 import com.metrolist.music.chroma.ChromaPrefs
 import com.metrolist.music.constants.HistoryDuration
 import com.metrolist.music.constants.PauseListenHistoryKey
+import com.metrolist.music.constants.TranslateModeKey
+import com.metrolist.music.chroma.lyrics.ChromaTranslations
+import com.metrolist.music.chroma.lyrics.MusixmatchProvider
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.db.entities.Event
 import com.metrolist.music.db.entities.LyricsEntity
@@ -33,6 +36,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalDateTime
 import javax.inject.Inject
@@ -146,6 +150,40 @@ class SpotifyListener : NotificationListenerService() {
         lyricsFor = id
         lastLine = -2
         com.metrolist.music.chroma.ChromaNowLyrics.publish(id, lines)
+        if (text != null && text != LyricsEntity.LYRICS_NOT_FOUND) runCatching { translate(id, text, m, trackId) }
+    }
+
+    /**
+     * Chroma's lyrics translation: Musixmatch's community translation into the chosen language, saved
+     * the way Metrolist saves its own so the player shows it under each line, and fed to the Live Activity.
+     */
+    private suspend fun translate(id: String, text: String, m: MediaMetadata, trackId: String?) {
+        val lang = ChromaPrefs.translationLanguage.value
+        if (lang.isEmpty() || lines.isEmpty()) return
+        // The lyrics row may still be on its way into the database.
+        var found: LyricsEntity? = null
+        for (attempt in 0 until 8) {
+            found = withTimeoutOrNull(1500) { database.lyrics(id).first() }
+            if (found != null) break
+            delay(300)
+        }
+        val entity = found ?: return
+        val translated: List<String> = if (entity.translationLanguage == lang && entity.translatedLyrics.isNotBlank()) {
+            entity.translatedLyrics.split("\n")
+        } else {
+            val map = withContext(Dispatchers.IO) {
+                runCatching {
+                    MusixmatchProvider.translations(this@SpotifyListener, trackId ?: id, m.title, m.artists.joinToString { it.name }, lang)
+                }.getOrDefault(emptyMap())
+            }
+            val aligned = ChromaTranslations.align(text, map) ?: return
+            val mode = dataStore[TranslateModeKey] ?: "Literal"
+            database.query { upsert(entity.copy(translatedLyrics = aligned.joinToString("\n"), translationLanguage = lang, translationMode = mode)) }
+            aligned
+        }
+        if (currentId != id) return
+        lines.forEachIndexed { i, e -> e.translatedTextFlow.value = translated.getOrNull(i)?.takeIf { it.isNotBlank() } }
+        lastLine = -2
     }
 
     /** Counts the finished play the way Metrolist does, once it passed the history length. */

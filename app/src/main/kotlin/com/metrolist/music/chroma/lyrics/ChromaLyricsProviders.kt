@@ -305,6 +305,41 @@ object MusixmatchProvider : LyricsProvider {
         return call("track.lyrics.get")?.optJSONObject("body")?.optJSONObject("lyrics")?.optString("lyrics_body")?.takeIf { it.isNotBlank() }
             ?: error("Musixmatch: no lyrics")
     }
+
+    /**
+     * Musixmatch's community translations of a song into [lang] (ISO 639-1), keyed by the original
+     * line as [ChromaTranslations.norm] writes it. Blocking; call it off the main thread.
+     */
+    fun translations(context: Context, id: String, title: String, artist: String, lang: String): Map<String, String> {
+        fun fetch(tok: String): Pair<Int, JSONObject?> {
+            val q = StringBuilder("${BASE}crowd.track.translations.get?app_id=$APP&format=json&comment_format=text&part=user")
+                .append("&selected_language=").append(Http.enc(lang)).append("&usertoken=").append(Http.enc(tok))
+            if (isSpotifyTrackId(id)) q.append("&track_spotify_id=").append(id)
+            else {
+                val (c, b) = Http.get("${BASE}matcher.track.get?app_id=$APP&format=json&q_track=${Http.enc(title)}&q_artist=${Http.enc(firstArtist(artist))}&usertoken=${Http.enc(tok)}", headers)
+                if (c != 200) return 0 to null
+                val m = JSONObject(b).getJSONObject("message")
+                val st = m.optJSONObject("header")?.optInt("status_code") ?: 0
+                val track = m.optJSONObject("body")?.optJSONObject("track") ?: return st to null
+                q.append("&commontrack_id=").append(track.optLong("commontrack_id"))
+            }
+            val (code, body) = Http.get(q.toString(), headers)
+            if (code != 200) return code to null
+            val msg = JSONObject(body).getJSONObject("message")
+            return (msg.optJSONObject("header")?.optInt("status_code") ?: 0) to msg.optJSONObject("body")
+        }
+        var (status, body) = fetch(token(context))
+        if (status == 401) { val r = fetch(token(context, fresh = true)); status = r.first; body = r.second }
+        val list = body?.optJSONArray("translations_list") ?: return emptyMap()
+        val out = HashMap<String, String>()
+        for (i in 0 until list.length()) {
+            val t = list.optJSONObject(i)?.optJSONObject("translation") ?: continue
+            val original = t.optString("matched_line").ifBlank { t.optString("subtitle_matched_line") }.ifBlank { t.optString("snippet") }
+            val translated = t.optString("description").replace('\n', ' ').trim()
+            if (original.isNotBlank() && translated.isNotBlank()) out[ChromaTranslations.norm(original)] = translated
+        }
+        return out
+    }
 }
 
 // ---------------- NetEase (yrc word timing) ----------------

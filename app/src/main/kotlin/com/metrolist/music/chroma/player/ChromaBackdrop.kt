@@ -148,7 +148,8 @@ half4 main(float2 fc) {
 fun FluidArtwork(url: String, paused: Boolean = false, modifier: Modifier = Modifier) {
     if (Build.VERSION.SDK_INT < 33) return
     val ctx = LocalContext.current
-    val shader = remember { RuntimeShader(FLUID_AGSL) }
+    // A device whose shader compiler refuses the effect gets the plain blurred cover instead of a crash.
+    val shader = remember { runCatching { RuntimeShader(FLUID_AGSL) }.getOrNull() }
     var time by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(paused) {
         if (paused) return@LaunchedEffect
@@ -157,12 +158,12 @@ fun FluidArtwork(url: String, paused: Boolean = false, modifier: Modifier = Modi
     }
     Box(
         modifier.fillMaxSize().graphicsLayer {
-            shader.setFloatUniform("size", size.width.coerceAtLeast(1f), size.height.coerceAtLeast(1f))
-            shader.setFloatUniform("time", time)
-            renderEffect = RenderEffect.createChainEffect(
-                RenderEffect.createBlurEffect(56f, 56f, Shader.TileMode.CLAMP),
-                RenderEffect.createRuntimeShaderEffect(shader, "image"),
-            ).asComposeRenderEffect()
+            val blur = RenderEffect.createBlurEffect(56f, 56f, Shader.TileMode.CLAMP)
+            renderEffect = if (shader == null) blur.asComposeRenderEffect() else {
+                shader.setFloatUniform("size", size.width.coerceAtLeast(1f), size.height.coerceAtLeast(1f))
+                shader.setFloatUniform("time", time)
+                RenderEffect.createChainEffect(blur, RenderEffect.createRuntimeShaderEffect(shader, "image")).asComposeRenderEffect()
+            }
         },
     ) {
         AsyncImage(
