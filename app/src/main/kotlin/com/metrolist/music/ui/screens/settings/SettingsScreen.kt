@@ -74,6 +74,21 @@ fun SettingsScreen(
             )
         )
 
+        // Chroma
+        Material3SettingsGroup(
+            title = "Chroma",
+            items = listOf(
+                Material3SettingsItem(
+                    icon = painterResource(R.drawable.tune),
+                    title = { Text("Chroma Settings") },
+                    description = { Text("Spotify, lyrics, player, Live Activity, haptics, audio effects") },
+                    onClick = { navController.navigate("chroma") }
+                )
+            )
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // User Interface Section
         Material3SettingsGroup(
             title = stringResource(R.string.settings_section_ui),

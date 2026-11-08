@@ -71,7 +71,7 @@ class PlayerConnection(
                 "service.isPlayerReady=${playerReadinessFlow.value}"
         }
         return try {
-            service.player
+            chromaWrap(service.player)
         } catch (e: UninitializedPropertyAccessException) {
             throw IllegalStateException(
                 "MusicService.player field not initialized despite isPlayerReady=true; " +
@@ -84,11 +84,19 @@ class PlayerConnection(
     private fun getPlayerOrNull(): ExoPlayer? =
         try {
             if (!playerReadinessFlow.value) return null
-            service.player
+            chromaWrap(service.player)
         } catch (_: UninitializedPropertyAccessException) {
             null
         } catch (_: NullPointerException) {
             null
+        }
+
+    /** In Chroma's Spotify mode the whole UI drives the Spotify app through [SpotifyPlayer]. */
+    private fun chromaWrap(p: ExoPlayer): ExoPlayer =
+        if (com.metrolist.music.chroma.ChromaPrefs.spotifyMode.value) {
+            com.metrolist.music.chroma.spotify.SpotifyPlayer.wrap(p, service)
+        } else {
+            p
         }
 
     val player: ExoPlayer
@@ -205,12 +213,14 @@ class PlayerConnection(
     var onSkipNext: (() -> Unit)? = null
 
     private var attachedPlayer: Player? = null
+    private var chromaPolling = false
 
     init {
         scope.launch {
             service.playerFlow.collect { newPlayer ->
-                if (newPlayer != null && newPlayer != attachedPlayer) {
-                    updateAttachedPlayer(newPlayer)
+                val wrapped = newPlayer?.let { chromaWrap(it) }
+                if (wrapped != null && wrapped != attachedPlayer) {
+                    updateAttachedPlayer(wrapped)
                 }
             }
         }
@@ -226,6 +236,16 @@ class PlayerConnection(
         attachedPlayer?.removeListener(this)
         attachedPlayer = newPlayer
         newPlayer.addListener(this)
+        if (newPlayer is com.metrolist.music.chroma.spotify.SpotifyPlayer) {
+            service.sleepTimer?.let { timer ->
+                timer.player = newPlayer
+                newPlayer.addListener(timer)
+            }
+            if (!chromaPolling) {
+                chromaPolling = true
+                com.metrolist.music.chroma.spotify.SpotifyBridge.startPolling(service)
+            }
+        }
         // Refresh all state from new player
         playbackState.value = newPlayer.playbackState
         playWhenReady.value = newPlayer.playWhenReady
@@ -318,6 +338,10 @@ class PlayerConnection(
     }
 
     fun toggleLike() {
+        if (attachedPlayer is com.metrolist.music.chroma.spotify.SpotifyPlayer) {
+            com.metrolist.music.chroma.spotify.SpotifyBridge.toggleLike(database)
+            return
+        }
         try {
             service.toggleLike()
         } catch (e: Exception) {
@@ -668,6 +692,10 @@ class PlayerConnection(
     }
 
     fun dispose() {
+        if (chromaPolling) {
+            chromaPolling = false
+            com.metrolist.music.chroma.spotify.SpotifyBridge.stopPolling()
+        }
         try {
             attachedPlayer?.removeListener(this)
             attachedPlayer = null

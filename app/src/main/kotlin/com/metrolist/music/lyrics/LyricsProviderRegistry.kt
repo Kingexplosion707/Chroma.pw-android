@@ -7,6 +7,12 @@ package com.metrolist.music.lyrics
 
 object LyricsProviderRegistry {
     private val providerMap = mapOf(
+        "SpicyLyrics" to com.metrolist.music.chroma.lyrics.SpicyLyricsProvider,
+        "BiniLyrics" to com.metrolist.music.chroma.lyrics.BiniLyricsProvider,
+        "Musixmatch" to com.metrolist.music.chroma.lyrics.MusixmatchProvider,
+        "Unison" to com.metrolist.music.chroma.lyrics.UnisonProvider,
+        "NetEase" to com.metrolist.music.chroma.lyrics.NetEaseProvider,
+        "KuGouKRC" to com.metrolist.music.chroma.lyrics.KuGouKrcProvider,
         "BetterLyrics" to BetterLyricsProvider,
         "Paxsenix" to PaxsenixLyricsProvider,
         "LrcLib" to LrcLibLyricsProvider,
@@ -36,7 +42,14 @@ object LyricsProviderRegistry {
         return providers.filter { it in providerNames }.joinToString(",")
     }
 
+    // Chroma's order: asked top to bottom until one has word timing.
     fun getDefaultProviderOrder(): List<String> = listOf(
+        "SpicyLyrics",
+        "BiniLyrics",
+        "Musixmatch",
+        "Unison",
+        "NetEase",
+        "KuGouKRC",
         "BetterLyrics",
         "LrcLib",
         "KuGou",

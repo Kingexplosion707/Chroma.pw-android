@@ -905,8 +905,6 @@ fun AppearanceSettings(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp),
     ) {
-        com.metrolist.music.chroma.ChromaSettingsGroup()
-        Spacer(Modifier.height(16.dp))
         Material3SettingsGroup(
             title = stringResource(R.string.theme),
             items =

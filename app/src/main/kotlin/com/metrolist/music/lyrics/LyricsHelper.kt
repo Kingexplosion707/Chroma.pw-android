@@ -74,6 +74,8 @@ constructor(
             Timber.tag("LyricsHelper").d("Starting sequential fetch for: $cleanedTitle by ${mediaMetadata.artists.joinToString { it.name }}")
             Timber.tag("LyricsHelper").d("Enabled providers in order: ${enabledProviders.joinToString { it.name }}")
 
+            var lineTimedFallback: LyricsWithProvider? = null
+            val chroma = com.metrolist.music.chroma.ChromaPrefs
             for (provider in enabledProviders) {
                 Timber.tag("LyricsHelper").d("Trying provider: ${provider.name}")
                 val providerResult = try {
@@ -97,13 +99,22 @@ constructor(
                 if (providerResult != null && providerResult.isSuccess) {
                     Timber.tag("LyricsHelper").i("Got lyrics from ${provider.name}")
                     val filtered = LyricsUtils.filterLyricsCreditLines(providerResult.getOrNull()!!)
-                    return@withTimeoutOrNull LyricsWithProvider(filtered, provider.name)
+                    // Chroma keeps asking until a source has word timing, then falls back to the first hit.
+                    if (!chroma.preferWordTiming.value || com.metrolist.music.chroma.lyrics.LyricsOut.isWordTimed(filtered)) {
+                        return@withTimeoutOrNull LyricsWithProvider(filtered, provider.name)
+                    }
+                    if (lineTimedFallback == null) lineTimedFallback = LyricsWithProvider(filtered, provider.name)
                 } else {
                     val errorMsg = providerResult?.exceptionOrNull()?.message ?: "timeout or exception"
                     Timber.tag("LyricsHelper").w("${provider.name} failed: $errorMsg")
                 }
             }
 
+            lineTimedFallback?.let { fb ->
+                return@withTimeoutOrNull if (chroma.simulateWordTiming.value) {
+                    LyricsWithProvider(com.metrolist.music.chroma.lyrics.LyricsOut.simulateWordTiming(fb.lyrics), fb.provider)
+                } else fb
+            }
             Timber.tag("LyricsHelper").w("No lyrics found after checking all providers")
             LyricsWithProvider(LYRICS_NOT_FOUND, PROVIDER_NONE)
         }

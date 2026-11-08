@@ -15,6 +15,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
 
     <!-- Microphone feature for music recognition (not required) -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -28,6 +30,7 @@
             <action android:name="android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" />
         </intent>
         <package android:name="com.google.android.projection.gearhead" />
+        <package android:name="com.spotify.music" />
     </queries>
     <application
         android:name=".App"
@@ -231,6 +234,148 @@
             android:launchMode="singleTask"
             android:noHistory="true"
             android:theme="@style/Theme.Metrolist.Transparent" />
+
+        <activity-alias
+            android:name=".ChromaIconCobalt"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/chroma_icon_chromacobalt"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/chroma_icon_chromacobalt"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".ChromaIconDark"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/chroma_icon_chromadark"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/chroma_icon_chromadark"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".ChromaIconFlat"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/chroma_icon_chromaflat"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/chroma_icon_chromaflat"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".ChromaIconMono"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/chroma_icon_chromamono"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/chroma_icon_chromamono"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".ChromaIconRings"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/chroma_icon_chromarings"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/chroma_icon_chromarings"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Chroma: Spotify remote, sign-in, Live Activity, audio effects, tiles and shortcuts -->
+        <service
+            android:name=".chroma.spotify.SpotifyListener"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+        <activity
+            android:name=".chroma.spotify.SpotifyAuthActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Metrolist.Transparent">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="chroma" android:host="callback" />
+            </intent-filter>
+        </activity>
+        <receiver
+            android:name=".chroma.spotify.LiveActivityReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".chroma.audio.ChromaAudioFxReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.action.OPEN_AUDIO_EFFECT_CONTROL_SESSION" />
+                <action android:name="android.media.action.CLOSE_AUDIO_EFFECT_CONTROL_SESSION" />
+            </intent-filter>
+        </receiver>
+        <activity
+            android:name=".chroma.ChromaActionActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Metrolist.Transparent" />
+        <service
+            android:name=".chroma.ChromaLikeTile"
+            android:exported="true"
+            android:icon="@drawable/favorite"
+            android:label="Like song"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".chroma.ChromaNextTile"
+            android:exported="true"
+            android:icon="@drawable/skip_next"
+            android:label="Next song"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".chroma.ChromaSleepTile"
+            android:exported="true"
+            android:icon="@drawable/bedtime"
+            android:label="Sleep timer"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <service
             android:name=".chroma.HapticService"

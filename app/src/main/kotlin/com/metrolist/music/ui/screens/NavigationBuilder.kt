@@ -74,7 +74,26 @@ fun NavGraphBuilder.navigationBuilder(
     snackbarHostState: SnackbarHostState,
 ) {
     composable(Screens.Home.route) {
-        HomeScreen(snackbarHostState = snackbarHostState)
+        if (com.metrolist.music.chroma.ChromaPrefs.spotifyMode.value) {
+            com.metrolist.music.chroma.spotify.SpotifyHomeScreen()
+        } else {
+            HomeScreen(snackbarHostState = snackbarHostState)
+        }
+    }
+
+    composable("spotify/liked") {
+        com.metrolist.music.chroma.spotify.SpotifyCollectionScreen("liked", "liked")
+    }
+
+    composable("chroma") {
+        com.metrolist.music.chroma.ChromaSettingsScreen(navController, null)
+    }
+
+    composable(
+        route = "chroma/{page}",
+        arguments = listOf(navArgument("page") { type = NavType.StringType }),
+    ) { entry ->
+        com.metrolist.music.chroma.ChromaSettingsScreen(navController, entry.arguments?.getString("page"))
     }
 
     composable(Screens.Search.route) { backStackEntry ->
@@ -89,14 +108,22 @@ fun NavGraphBuilder.navigationBuilder(
             remember(pureBlackEnabled, useDarkTheme) {
                 pureBlackEnabled && useDarkTheme
             }
-        SearchScreen(
-            pureBlack = pureBlack,
-            savedStateHandle = backStackEntry.savedStateHandle
-        )
+        if (com.metrolist.music.chroma.ChromaPrefs.spotifyMode.value) {
+            com.metrolist.music.chroma.spotify.SpotifySearchScreen()
+        } else {
+            SearchScreen(
+                pureBlack = pureBlack,
+                savedStateHandle = backStackEntry.savedStateHandle
+            )
+        }
     }
 
     composable(Screens.Library.route) {
-        LibraryScreen()
+        if (com.metrolist.music.chroma.ChromaPrefs.spotifyMode.value) {
+            com.metrolist.music.chroma.spotify.SpotifyLibraryScreen()
+        } else {
+            LibraryScreen()
+        }
     }
 
     composable(Screens.ListenTogether.route) {
@@ -191,8 +218,13 @@ fun NavGraphBuilder.navigationBuilder(
                     type = NavType.StringType
                 },
             ),
-    ) {
-        AlbumScreen(navController)
+    ) { entry ->
+        val albumId = entry.arguments?.getString("albumId")
+        if (com.metrolist.music.chroma.spotify.isSpotifyId(albumId)) {
+            com.metrolist.music.chroma.spotify.SpotifyCollectionScreen("album", albumId!!)
+        } else {
+            AlbumScreen(navController)
+        }
     }
 
     composable(
@@ -207,8 +239,13 @@ fun NavGraphBuilder.navigationBuilder(
                     defaultValue = false
                 },
             ),
-    ) {
-        ArtistScreen(navController)
+    ) { entry ->
+        val artistId = entry.arguments?.getString("artistId")
+        if (com.metrolist.music.chroma.spotify.isSpotifyId(artistId)) {
+            com.metrolist.music.chroma.spotify.SpotifyArtistScreen(artistId!!)
+        } else {
+            ArtistScreen(navController)
+        }
     }
 
     composable(
@@ -263,8 +300,13 @@ fun NavGraphBuilder.navigationBuilder(
                     type = NavType.StringType
                 },
             ),
-    ) {
-        OnlinePlaylistScreen(navController)
+    ) { entry ->
+        val playlistId = entry.arguments?.getString("playlistId")
+        if (com.metrolist.music.chroma.spotify.isSpotifyId(playlistId)) {
+            com.metrolist.music.chroma.spotify.SpotifyCollectionScreen("playlist", playlistId!!)
+        } else {
+            OnlinePlaylistScreen(navController)
+        }
     }
 
     composable(

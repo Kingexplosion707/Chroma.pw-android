@@ -683,6 +683,7 @@ class MusicService :
         sleepTimer =
             SleepTimer(scope, player) { multiplier ->
                 sleepTimerVolumeMultiplier.value = multiplier
+                com.metrolist.music.chroma.spotify.SpotifyBridge.onSleepVolume(multiplier)
             }
         player.addListener(sleepTimer!!)
 

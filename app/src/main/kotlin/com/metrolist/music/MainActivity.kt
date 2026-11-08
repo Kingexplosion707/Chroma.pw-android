@@ -1075,6 +1075,12 @@ class MainActivity : FragmentActivity() {
                                                     )
                                                 }
                                             }
+                                            IconButton(onClick = { navController.navigate("chroma") }) {
+                                                Icon(
+                                                    painter = painterResource(R.drawable.tune),
+                                                    contentDescription = "Chroma Settings",
+                                                )
+                                            }
                                             IconButton(onClick = { navController.navigate("stats") }) {
                                                 Icon(
                                                     painter = painterResource(R.drawable.stats),

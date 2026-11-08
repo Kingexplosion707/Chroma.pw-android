@@ -14,6 +14,8 @@ import androidx.core.content.ContextCompat
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.metrolist.music.chroma.spotify.SpotifyBridge
+import com.metrolist.music.chroma.spotify.SpotifyRemote
 import com.metrolist.music.playback.MusicService
 import kotlinx.coroutines.*
 import java.net.HttpURLConnection
@@ -53,6 +55,10 @@ class ChromaWallpaperService : WallpaperService() {
         override fun onCreate(holder: SurfaceHolder) {
             super.onCreate(holder)
             ChromaPrefs.init(applicationContext)
+            if (ChromaPrefs.spotifyMode.value) {
+                SpotifyBridge.init(applicationContext)
+                SpotifyRemote.start(applicationContext)
+            }
             val token = SessionToken(applicationContext, ComponentName(applicationContext, MusicService::class.java))
             val future = MediaController.Builder(applicationContext, token).buildAsync()
             future.addListener({ controller = runCatching { future.get() }.getOrNull(); draw() }, ContextCompat.getMainExecutor(applicationContext))
@@ -76,10 +82,42 @@ class ChromaWallpaperService : WallpaperService() {
         }
 
         private val tick = object : Runnable {
-            override fun run() { if (visible) { poll(); draw(); ui.postDelayed(this, 33) } }
+            override fun run() { if (visible) { poll(); draw(); ui.postDelayed(this, if (playing()) 33 else 400) } }
+        }
+
+        private fun playing(): Boolean =
+            if (ChromaPrefs.spotifyMode.value) SpotifyRemote.state.value.playing else controller?.isPlaying == true
+
+        private var fallbackJob: Job? = null
+
+        /** Spotify mode: the song from Spotify's media session, lyrics shared by Chroma's player. */
+        private fun pollSpotify() {
+            val now = SpotifyRemote.state.value
+            if (!now.connected || now.title.isEmpty()) {
+                if (trackKey.isNotEmpty()) { trackKey = ""; title = ""; artist = ""; lyrics = null; art = null; bg = null; layouts.clear() }
+                return
+            }
+            val key = SpotifyBridge.songId(now)
+            if (key != trackKey) {
+                trackKey = key; title = now.title; artist = now.artist
+                lyrics = null; layouts.clear(); scrollY = 0f; art = null; bg = null
+                fallbackJob?.cancel()
+                val t = now.title; val a = now.artist; val al = now.album; val d = now.durationMs
+                fallbackJob = scope.launch {
+                    delay(9000)
+                    if (trackKey == key && lyrics == null) {
+                        val l = LyricsRepo.load(t, a, al, d)
+                        if (trackKey == key && lyrics == null) { lyrics = l; layouts.clear() }
+                    }
+                }
+            }
+            val bmp = now.art
+            if (bmp != null && bmp !== art) { art = bmp; bg = blurred(bmp) }
+            ChromaNowLyrics.forKey(key)?.let { l -> if (l !== lyrics) { lyrics = l; layouts.clear() } }
         }
 
         private fun poll() {
+            if (ChromaPrefs.spotifyMode.value) { pollSpotify(); return }
             val c = controller ?: return
             val m = c.mediaMetadata
             val t = m.title?.toString().orEmpty()
@@ -112,7 +150,8 @@ class ChromaWallpaperService : WallpaperService() {
             }
         }
 
-        private fun position(): Long = controller?.currentPosition ?: 0L
+        private fun position(): Long =
+            if (ChromaPrefs.spotifyMode.value) SpotifyRemote.state.value.livePosition() else controller?.currentPosition ?: 0L
 
         // ---------- blur (≈6px on screen) ----------
         private fun blurred(src: Bitmap): Bitmap = boxBlur(Bitmap.createScaledBitmap(src, 120, 120, true), 2)
@@ -179,7 +218,7 @@ class ChromaWallpaperService : WallpaperService() {
             if (ly.isEmpty()) return
             val width = (right - left).toInt()
             if (layoutW != width) { layouts.clear(); layoutW = width }
-            val align = when (ChromaPrefs.wallpaperAlign.intValue) { 1 -> Layout.Alignment.ALIGN_CENTER; 2 -> Layout.Alignment.ALIGN_OPPOSITE; else -> Layout.Alignment.ALIGN_NORMAL }
+            val align = when (ChromaPrefs.wallpaperAlign.value) { 1 -> Layout.Alignment.ALIGN_CENTER; 2 -> Layout.Alignment.ALIGN_OPPOSITE; else -> Layout.Alignment.ALIGN_NORMAL }
             val pos = position()
             val idx = lyr.indexAt(pos).coerceAtLeast(0)
             val gap = w * 0.035f
