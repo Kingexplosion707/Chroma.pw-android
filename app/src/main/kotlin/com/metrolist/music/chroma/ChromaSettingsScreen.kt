@@ -224,6 +224,9 @@ private fun HubPage(nav: NavController) {
                 if (access) "Connected to the Spotify app" else "Allow notification access",
                 if (access) "Chroma sees and controls what Spotify plays" else "Needed to see and control Spotify, count plays and show the Live Activity",
             ) { ctx.startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
+            textItem("Device broadcast status", "Turn it on in Spotify's settings so Chroma always knows the exact song, even signed out. Tap to open Spotify.") {
+                SpotifyRemote.openSpotify(ctx, "spotify:internal:preferences")
+            },
             switchItem(null, "Drive the Spotify app", "Metrolist's player, Home, Search and Library control Spotify. Off returns to YouTube Music after a restart.",
                 ChromaPrefs.spotifyMode.value) { ChromaPrefs.spotifyMode.value = it },
         ),
@@ -575,10 +578,14 @@ private fun SleepPage() {
 @Composable
 private fun LivePage() {
     val ctx = LocalContext.current
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     Material3SettingsGroup(
         title = "Live Activity",
         items = listOf(
-            switchItem(R.drawable.notification, "Live Activity", "The song and its current lyric line as a live update, in the status bar and on the lock screen", ChromaPrefs.liveActivity.value) { ChromaPrefs.liveActivity.value = it },
+            switchItem(R.drawable.notification, "Live Activity", "The song and its current lyric line as a live update, in the status bar and on the lock screen", ChromaPrefs.liveActivity.value) {
+                ChromaPrefs.liveActivity.value = it
+                if (it && Build.VERSION.SDK_INT >= 33) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+            },
             switchItem(R.drawable.translate, "Translation under the line", "Pick a translation language in Lyrics first", ChromaPrefs.liveActivityTranslation.value) { ChromaPrefs.liveActivityTranslation.value = it },
         ),
     )

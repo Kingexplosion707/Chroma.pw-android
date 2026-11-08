@@ -1,8 +1,10 @@
 package com.metrolist.music.chroma.spotify
 
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -10,6 +12,7 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.SystemClock
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -53,11 +56,37 @@ object SpotifyRemote {
         override fun onSessionDestroyed() { controller = null; _state.value = SpotifyNow() }
     }
 
+    /** The last track Spotify announced with "Device broadcast status" on: title, artist, spotify:track id. */
+    @Volatile private var announced: Triple<String, String, String>? = null
+    private var broadcastsOn = false
+
+    private val announcements = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val id = intent.getStringExtra("id")?.takeIf { it.startsWith("spotify:track:") } ?: return
+            announced = Triple(intent.getStringExtra("track").orEmpty(), intent.getStringExtra("artist").orEmpty(), id.substringAfterLast(':'))
+        }
+    }
+
+    /** The Spotify track id of [now] from Spotify's own broadcast, when it matches. */
+    fun announcedTrackId(now: SpotifyNow): String? =
+        announced?.takeIf { (t, _, _) -> t.isNotEmpty() && t.equals(now.title, ignoreCase = true) }?.third
+
+    private fun listenForAnnouncements(ctx: Context) {
+        if (broadcastsOn) return
+        broadcastsOn = true
+        runCatching {
+            ContextCompat.registerReceiver(
+                ctx.applicationContext, announcements, IntentFilter("com.spotify.music.metadatachanged"), ContextCompat.RECEIVER_EXPORTED,
+            )
+        }
+    }
+
     fun hasAccess(ctx: Context) = NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName)
     fun spotifyInstalled(ctx: Context) = ctx.packageManager.getLaunchIntentForPackage(SPOTIFY_PKG) != null
 
     fun start(ctx: Context) {
         app = ctx.applicationContext
+        listenForAnnouncements(ctx)
         if (!hasAccess(ctx)) return
         val mgr = ctx.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         val cn = ComponentName(ctx, SpotifyListener::class.java)

@@ -97,6 +97,7 @@ object SpotifyBridge {
     /** Spotify track id of what is playing, from the Media Session or the Web API. */
     fun trackId(now: SpotifyNow = SpotifyRemote.state.value): String? =
         now.mediaId.takeIf { it.startsWith("spotify:track:") }?.substringAfterLast(':')
+            ?: SpotifyRemote.announcedTrackId(now)
             ?: snap.value?.track?.takeIf { now.title.isEmpty() || it.name.equals(now.title, true) }?.id
 
     /** Stable id for a track, used as the song id in Metrolist's database. */

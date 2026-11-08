@@ -2,8 +2,11 @@ package com.metrolist.music.chroma
 
 import android.content.ComponentName
 import android.graphics.*
+import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
 import android.text.Layout
 import android.text.StaticLayout
@@ -14,17 +17,20 @@ import androidx.core.content.ContextCompat
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.metrolist.music.chroma.player.CanvasProvider
 import com.metrolist.music.chroma.spotify.SpotifyBridge
 import com.metrolist.music.chroma.spotify.SpotifyRemote
 import com.metrolist.music.playback.MusicService
 import kotlinx.coroutines.*
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.abs
 
 /**
- * Chroma lyrics live wallpaper for Metrolist: blurred cover background, big centred cover,
- * title and artist, then word-by-word lyrics. Reads playback from Metrolist's own media session.
+ * Chroma's lyrics live wallpaper: the song's Spotify Canvas (or its cover) lightly blurred behind a
+ * big centred cover, the title and artist, then word-by-word lyrics. Follows the Spotify app in
+ * Spotify mode, Metrolist's own player otherwise.
  */
 class ChromaWallpaperService : WallpaperService() {
     override fun onCreateEngine(): Engine = ChromaEngine()
@@ -43,6 +49,11 @@ class ChromaWallpaperService : WallpaperService() {
         private var art: Bitmap? = null
         private var bg: Bitmap? = null
         private var lyrics: Lyrics? = null
+        private var canvasFrames: List<Bitmap> = emptyList()
+        private var canvasFps = 12f
+        private var canvasClock = 0L
+        private var canvasTick = 0L
+        private var canvasJob: Job? = null
 
         private val layouts = HashMap<Int, StaticLayout>()
         private var layoutW = 0
@@ -101,6 +112,7 @@ class ChromaWallpaperService : WallpaperService() {
             if (key != trackKey) {
                 trackKey = key; title = now.title; artist = now.artist
                 lyrics = null; layouts.clear(); scrollY = 0f; art = null; bg = null
+                loadCanvas(key, SpotifyBridge.trackId(now))
                 fallbackJob?.cancel()
                 val t = now.title; val a = now.artist; val al = now.album; val d = now.durationMs
                 fallbackJob = scope.launch {
@@ -114,6 +126,62 @@ class ChromaWallpaperService : WallpaperService() {
             val bmp = now.art
             if (bmp != null && bmp !== art) { art = bmp; bg = blurred(bmp) }
             ChromaNowLyrics.forKey(key)?.let { l -> if (l !== lyrics) { lyrics = l; layouts.clear() } }
+        }
+
+        /** Decodes the song's Canvas once into small, lightly blurred frames that loop like a flipbook. */
+        private fun loadCanvas(key: String, trackId: String?) {
+            canvasJob?.cancel(); canvasFrames = emptyList(); canvasClock = 0L
+            if (!ChromaPrefs.canvas.value || trackId == null || Build.VERSION.SDK_INT < 28) return
+            canvasJob = scope.launch {
+                val url = CanvasProvider.find("spotify:track:$trackId") ?: return@launch
+                val frames = withContext(Dispatchers.IO) { runCatching { canvasFramesOf(url) }.getOrDefault(emptyList()) }
+                if (trackKey == key && frames.isNotEmpty()) canvasFrames = frames
+            }
+        }
+
+        private fun canvasFramesOf(url: String): List<Bitmap> {
+            if (Build.VERSION.SDK_INT < 28) return emptyList()
+            val file = File(cacheDir, "wallpaper_canvas.mp4")
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.connectTimeout = 10_000; conn.readTimeout = 15_000
+            try { conn.inputStream.use { input -> file.outputStream().use { input.copyTo(it) } } } finally { conn.disconnect() }
+            val r = MediaMetadataRetriever()
+            try {
+                r.setDataSource(file.absolutePath)
+                val count = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toIntOrNull() ?: return emptyList()
+                val durMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.takeIf { it > 0 } ?: return emptyList()
+                val srcFps = count * 1000f / durMs
+                val step = maxOf(1, Math.round(srcFps / 12f))
+                val total = minOf(count, (srcFps * 10).toInt())
+                val params = MediaMetadataRetriever.BitmapParams().apply { preferredConfig = Bitmap.Config.RGB_565 }
+                val out = ArrayList<Bitmap>()
+                var i = 0
+                while (i < total && isActiveCanvas()) {
+                    val n = minOf(8, total - i)
+                    r.getFramesAtIndex(i, n, params).forEachIndexed { j, b ->
+                        if ((i + j) % step == 0) out += softBlur(b)
+                        b.recycle()
+                    }
+                    i += n
+                }
+                canvasFps = srcFps / step
+                return out
+            } finally {
+                r.release()
+                file.delete()
+            }
+        }
+
+        private fun isActiveCanvas() = canvasJob?.isActive != false
+
+        /** Picks the Canvas frame for now; the loop only moves while the song plays. */
+        private fun canvasFrame(): Bitmap? {
+            val frames = canvasFrames
+            if (frames.isEmpty()) return null
+            val t = SystemClock.elapsedRealtime()
+            if (playing() && canvasTick > 0) canvasClock += (t - canvasTick).coerceIn(0L, 200L)
+            canvasTick = t
+            return frames[((canvasClock * canvasFps / 1000f).toLong() % frames.size).toInt()]
         }
 
         private fun poll() {
@@ -153,15 +221,22 @@ class ChromaWallpaperService : WallpaperService() {
         private fun position(): Long =
             if (ChromaPrefs.spotifyMode.value) SpotifyRemote.state.value.livePosition() else controller?.currentPosition ?: 0L
 
-        // ---------- blur (≈6px on screen) ----------
-        private fun blurred(src: Bitmap): Bitmap = boxBlur(Bitmap.createScaledBitmap(src, 120, 120, true), 2)
+        // ---------- blur (about 6 px on screen) ----------
+        private fun blurred(src: Bitmap): Bitmap = softBlur(src)
+
+        /** A fifth of the screen's width and a light box blur, so the picture stays recognisable. */
+        private fun softBlur(src: Bitmap): Bitmap {
+            val tw = ((if (w > 0) w else 1080) / 5).coerceIn(96, 320)
+            val th = (tw * src.height / src.width.toFloat()).toInt().coerceAtLeast(1)
+            return boxBlur(Bitmap.createScaledBitmap(src, tw, th, true), 1)
+        }
 
         private fun boxBlur(b: Bitmap, r: Int): Bitmap {
             val bw = b.width; val bh = b.height
             val a = IntArray(bw * bh).also { b.getPixels(it, 0, bw, 0, 0, bw, bh) }
             val t = IntArray(bw * bh)
-            repeat(3) { pass(a, t, bw, bh, r, true); pass(t, a, bw, bh, r, false) }
-            return Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888).also { it.setPixels(a, 0, bw, 0, 0, bw, bh) }
+            repeat(2) { pass(a, t, bw, bh, r, true); pass(t, a, bw, bh, r, false) }
+            return Bitmap.createBitmap(bw, bh, Bitmap.Config.RGB_565).also { it.setPixels(a, 0, bw, 0, 0, bw, bh) }
         }
 
         private fun pass(src: IntArray, dst: IntArray, bw: Int, bh: Int, r: Int, horiz: Boolean) {
@@ -187,7 +262,7 @@ class ChromaWallpaperService : WallpaperService() {
 
         private fun render(c: Canvas) {
             c.drawColor(Color.BLACK)
-            bg?.let { b ->
+            (canvasFrame() ?: bg)?.let { b ->
                 val s = maxOf(w / b.width.toFloat(), h / b.height.toFloat())
                 val dw = b.width * s; val dh = b.height * s
                 c.drawBitmap(b, null, RectF((w - dw) / 2, (h - dh) / 2, (w + dw) / 2, (h + dh) / 2), p)

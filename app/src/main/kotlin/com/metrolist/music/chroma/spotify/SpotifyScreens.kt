@@ -1,7 +1,13 @@
 package com.metrolist.music.chroma.spotify
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.provider.Settings as AndroidSettings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -262,12 +268,23 @@ fun SpotifySetupCards() {
     val ctx = LocalContext.current
     val hasAccess = remember { mutableStateOf(SpotifyRemote.hasAccess(ctx)) }
     LaunchedEffect(Unit) { while (true) { hasAccess.value = SpotifyRemote.hasAccess(ctx); kotlinx.coroutines.delay(2000) } }
+    fun notificationsAllowed() = Build.VERSION.SDK_INT < 33 ||
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    val notifications = remember { mutableStateOf(notificationsAllowed()) }
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { notifications.value = it }
     if (!hasAccess.value) {
         SetupCard(
             "Connect to the Spotify app",
             "Allow Chroma notification access so it can see and control what Spotify plays on this phone, count your plays and show the Live Activity.",
             "Allow access",
         ) { ctx.startActivity(Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+    if (hasAccess.value && !notifications.value && ChromaPrefs.liveActivity.value) {
+        SetupCard(
+            "Allow notifications",
+            "For the Live Activity: the song and its current lyric line in the status bar and on the lock screen.",
+            "Allow",
+        ) { askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS) }
     }
     if (!SpotifyApi.loggedIn.value) {
         SetupCard(
